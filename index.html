@@ -383,25 +383,32 @@
   // ---------- storage ----------
   async function loadEntries(){
     try{
-      const res = await window.storage.get('entries', false);
-      entries = res && res.value ? JSON.parse(res.value) : [];
+      const res = localStorage.getItem('hobbster_entries');
+      entries = res ? JSON.parse(res) : [];
     }catch(e){ entries = []; }
     renderDrawer();
   }
+
   async function saveEntries(){
-    try{ await window.storage.set('entries', JSON.stringify(entries), false); }catch(e){}
+    try{ 
+      localStorage.setItem('hobbster_entries', JSON.stringify(entries)); 
+    }catch(e){}
   }
+
   async function loadSettings(){
     try{
-      const res = await window.storage.get('settings', false);
-      if(res && res.value) settings = Object.assign(settings, JSON.parse(res.value));
+      const res = localStorage.getItem('hobbster_settings');
+      if(res) settings = Object.assign(settings, JSON.parse(res));
     }catch(e){}
     applySettings();
     buildSwatches();
     updateSteppers();
   }
+
   async function saveSettings(){
-    try{ await window.storage.set('settings', JSON.stringify(settings), false); }catch(e){}
+    try{ 
+      localStorage.setItem('hobbster_settings', JSON.stringify(settings)); 
+    }catch(e){}
   }
 
   function contrastColor(hex){
