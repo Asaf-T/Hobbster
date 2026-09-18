@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#CDE7F0" id="themeColorMeta">
+<title>Hobbs Log</title>
+<style>
+  :root{
+    --primary:#2E5C4E;
+    --primary-contrast:#FFFFFF;
+    --secondary:#DCEAE4;
+    --text:#000000;
+    --panel:#FFFFFF;
+    --danger:#A8402E;
+    color-scheme: light;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{height:100%; margin:0; background:var(--primary);}
+  body{
+    background:var(--primary);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    position:fixed;
+    inset:0;
+    color-scheme: light;
+  }
+  .mono{
+    font-family:"SF Mono","Roboto Mono","IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ---------- App shell ---------- */
+  #app{ position:absolute; inset:0; display:flex; flex-direction:column; }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:calc(env(safe-area-inset-top,0px) + 16px) 18px 16px 18px; flex-shrink:0;
+  }
+  .icon-btn{
+    background:none; border:none; padding:8px;
+    color:var(--text); cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .icon-btn svg{ width:22px; height:22px; }
+  .done-btn{
+    background:none; border:none;
+    font-size:16px; font-weight:600;
+    color:var(--text); opacity:0.4;
+    padding:8px 4px; cursor:pointer; letter-spacing:0.2px;
+  }
+  .done-btn.active{ opacity:1; }
+
+  .grid{
+    flex:1; display:grid;
+    grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr;
+    gap:1px; background:var(--secondary);
+    margin:0 1px 1px 1px; border-top:1px solid var(--secondary);
+  }
+  .cell{
+    background:var(--primary);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:10px; padding:12px;
+  }
+  .cell.tap{ cursor:pointer; }
+  .cell.tap:active{ filter:brightness(0.93); }
+  .cell.punchable{ cursor:pointer; }
+  .cell.punchable:active{ filter:brightness(0.93); }
+  .cell .label{ font-size:12.5px; letter-spacing:0.4px; color:var(--text); opacity:0.5; }
+  .cell .value{ font-size:clamp(28px, 8.5vw, 42px); font-weight:500; color:var(--text); line-height:1; text-align:center; }
+  .cell .value.empty{ color:var(--secondary); font-weight:400; }
+
+  .cell-actions{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .time-slot{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .manual-btn{
+    background:var(--secondary); color:var(--text);
+    border:none; border-radius:12px;
+    padding:9px 16px; font-size:12px; font-weight:600;
+    letter-spacing:0.2px; cursor:pointer;
+  }
+  .manual-btn:active{ opacity:0.8; }
+
+  /* ---------- Keypad sheet ---------- */
+  #keypadOverlay{ position:absolute; inset:0; background:rgba(0,0,0,0.28); display:none; z-index:50; }
+  #keypadOverlay.open{ display:block; }
+  #sheet{
+    position:absolute; left:0; right:0; bottom:0;
+    background:var(--panel);
+    border-radius:20px 20px 0 0;
+    padding:18px 16px calc(env(safe-area-inset-bottom,0px) + 16px) 16px;
+    transform:translateY(100%);
+    transition:transform 0.22s cubic-bezier(.32,.72,0,1);
+  }
+  #keypadOverlay.open #sheet{ transform:translateY(0); }
+  .sheet-display{ text-align:center; font-size:40px; font-weight:500; padding:14px 0 18px 0; letter-spacing:1px; color:var(--text); }
+  .sheet-display .ghost{ color:#DCD9D1; }
+  #signToggle{
+    display:block; margin:0 auto 14px auto;
+    background:#F1F0EC; border:none; border-radius:12px;
+    width:56px; height:40px; font-size:20px; font-weight:700;
+    color:var(--text); cursor:pointer;
+  }
+  #signToggle:active{ background:#E5E3DC; }
+  .keys{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .key{ background:#F1F0EC; border:none; border-radius:14px; font-size:24px; font-weight:500; color:var(--text); padding:18px 0; cursor:pointer; }
+  .key:active{ background:#E5E3DC; }
+  .key.func{ background:none; color:var(--text); opacity:0.5; font-size:20px; }
+  .key.confirm{ background:var(--primary); color:var(--primary-contrast); }
+  .key.confirm:disabled{ background:#DAD7CE; color:#fff; }
+
+  /* ---------- List drawer ---------- */
+  #drawerOverlay{ position:absolute; inset:0; background:rgba(0,0,0,0.28); display:none; z-index:30; }
+  #drawerOverlay.open{ display:block; }
+  #drawer{
+    position:absolute; top:0; bottom:0; left:0; width:88%; max-width:380px;
+    background:var(--primary); transform:translateX(-100%);
+    transition:transform 0.24s cubic-bezier(.32,.72,0,1);
+    display:flex; flex-direction:column;
+  }
+  #drawerOverlay.open #drawer{ transform:translateX(0); }
+  .drawer-head{ display:flex; align-items:center; justify-content:space-between; padding:calc(env(safe-area-inset-top,0px) + 14px) 10px 10px 10px; flex-shrink:0; }
+  .drawer-title{ font-size:17px; font-weight:600; flex:1; text-align:center; color:var(--text); }
+  .drawer-list{ flex:1; overflow-y:auto; padding:4px 12px 24px 12px; }
+  .entry{ background:var(--panel); border-radius:14px; padding:14px 14px 12px 14px; margin-bottom:10px; }
+  .entry-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .entry-date{ font-size:13px; color:var(--text); opacity:0.5; font-weight:600; letter-spacing:0.2px; }
+  .entry-actions{ display:flex; gap:4px; }
+  .entry-actions button{ background:none; border:none; padding:6px; color:var(--text); opacity:0.55; cursor:pointer; }
+  .entry-actions svg{ width:17px; height:17px; }
+  .entry-grid{ display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; }
+  .entry-field .flabel{ font-size:10.5px; color:var(--text); opacity:0.5; letter-spacing:0.3px; }
+  .entry-field .fval{ font-size:17px; font-weight:500; color:var(--text); }
+
+  .confirm-row{ display:flex; align-items:center; gap:10px; background:#FBEFEC; border-radius:10px; padding:8px 10px; margin-top:8px; }
+  .confirm-row span{ font-size:13px; color:var(--danger); flex:1; }
+  .confirm-row button{ border:none; border-radius:8px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+  .confirm-row .yes{ background:var(--danger); color:#fff; }
+  .confirm-row .no{ background:none; color:var(--text); opacity:0.6; }
+
+  .empty-msg{ text-align:center; color:var(--text); opacity:0.45; font-size:14px; margin-top:60px; }
+
+  /* ---------- Edit overlay ---------- */
+  #editOverlay{ position:absolute; inset:0; background:var(--primary); display:none; flex-direction:column; z-index:35; }
+  #editOverlay.open{ display:flex; }
+
+  /* ---------- Settings overlay ---------- */
+  #settingsOverlay{ position:absolute; inset:0; background:var(--primary); display:none; flex-direction:column; z-index:45; }
+  #settingsOverlay.open{ display:flex; }
+  .settings-body{ flex:1; overflow-y:auto; padding:6px 20px 40px 20px; }
+  .setting-section{ margin-bottom:30px; }
+  .setting-label{ font-size:12px; font-weight:700; letter-spacing:0.5px; color:var(--text); opacity:0.5; margin-bottom:12px; }
+  .swatch-row{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  .swatch{
+    width:36px; height:36px; border-radius:50%;
+    border:2px solid transparent; cursor:pointer; padding:0;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.08) inset;
+  }
+  .swatch.selected{ border-color:var(--text); }
+  .swatch.custom{
+    background:conic-gradient(from 0deg,#F7D6D0,#FDE9C8,#FFF6B7,#D9F2D0,#CDEEE0,#CDE7F0,#D7D9F5,#F0D6EC,#F7D6D0);
+    position:relative; overflow:hidden;
+  }
+  .swatch.custom input[type=color]{
+    position:absolute; inset:-4px; opacity:0; cursor:pointer; width:44px; height:44px;
+  }
+  .stepper-row{ display:flex; gap:22px; }
+  .stepper{ display:flex; align-items:center; gap:10px; }
+  .stepper button{
+    width:34px; height:34px; border-radius:10px; border:none;
+    background:#F1F0EC; color:var(--text); font-size:18px; font-weight:600; cursor:pointer;
+  }
+  .stepper button:active{ background:#E5E3DC; }
+  .stepper-val{ font-size:18px; font-weight:600; min-width:26px; text-align:center; color:var(--text); }
+  .stepper-suffix{ font-size:12px; color:var(--text); opacity:0.5; }
+
+  /* ---------- Clear confirmation modal ---------- */
+  #clearConfirmOverlay{ position:absolute; inset:0; background:rgba(0,0,0,0.32); display:none; align-items:center; justify-content:center; z-index:60; }
+  #clearConfirmOverlay.open{ display:flex; }
+  #clearConfirmBox{
+    background:var(--panel); border-radius:18px;
+    padding:24px 22px; width:78%; max-width:300px;
+  }
+  #clearConfirmMsg{ font-size:16px; font-weight:600; color:var(--text); text-align:center; margin-bottom:20px; }
+  #clearConfirmActions{ display:flex; gap:12px; }
+  #clearConfirmActions button{
+    flex:1; border:none; border-radius:12px; padding:12px 0;
+    font-size:15px; font-weight:600; cursor:pointer;
+  }
+  #clearNo{ background:#F1F0EC; color:var(--text); }
+  #clearYes{ background:var(--danger); color:#fff; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <button class="icon-btn" id="openDrawer" aria-label="History">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    </button>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <button class="done-btn active" id="clearBtn" style="opacity:0.6;">Clear</button>
+      <button class="done-btn" id="doneBtn">Done</button>
+    </div>
+  </div>
+
+  <div class="grid" id="mainGrid">
+    <div class="cell tap" data-key="ho">
+      <div class="label">Hobbs ON</div>
+      <div class="value mono empty" id="v_ho">—</div>
+    </div>
+    <div class="cell tap" data-key="hf">
+      <div class="label">Hobbs OFF</div>
+      <div class="value mono empty" id="v_hf">—</div>
+    </div>
+    <div class="cell" data-key="tu">
+      <div class="label">Time Up</div>
+      <div id="dyn_tu"></div>
+    </div>
+    <div class="cell" data-key="td">
+      <div class="label">Time Down</div>
+      <div id="dyn_td"></div>
+    </div>
+  </div>
+</div>
+
+<!-- History drawer -->
+<div id="drawerOverlay">
+  <div id="drawer">
+    <div class="drawer-head">
+      <button class="icon-btn" id="openSettings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="drawer-title">History</div>
+      <button class="icon-btn" id="closeDrawer" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="drawer-list" id="drawerList"></div>
+  </div>
+</div>
+
+<!-- Edit overlay -->
+<div id="editOverlay">
+  <div class="topbar">
+    <button class="icon-btn" id="editCancel" aria-label="Cancel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button class="done-btn active" id="editSave">Save</button>
+  </div>
+  <div class="grid" id="editGrid">
+    <div class="cell tap" data-key="ho">
+      <div class="label">Hobbs ON</div>
+      <div class="value mono empty" id="e_v_ho">—</div>
+    </div>
+    <div class="cell tap" data-key="hf">
+      <div class="label">Hobbs OFF</div>
+      <div class="value mono empty" id="e_v_hf">—</div>
+    </div>
+    <div class="cell tap" data-key="tu">
+      <div class="label">Time Up</div>
+      <div class="value mono empty" id="e_v_tu">—</div>
+    </div>
+    <div class="cell tap" data-key="td">
+      <div class="label">Time Down</div>
+      <div class="value mono empty" id="e_v_td">—</div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings overlay -->
+<div id="settingsOverlay">
+  <div class="topbar">
+    <button class="icon-btn" id="settingsBack" aria-label="Back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <div class="drawer-title" style="text-align:left;">Settings</div>
+    <div style="width:38px;"></div>
+  </div>
+  <div class="settings-body">
+    <div class="setting-section">
+      <div class="setting-label">PRIMARY</div>
+      <div class="swatch-row" data-target="primary" id="row_primary"></div>
+    </div>
+    <div class="setting-section">
+      <div class="setting-label">SECONDARY</div>
+      <div class="swatch-row" data-target="secondary" id="row_secondary"></div>
+    </div>
+    <div class="setting-section">
+      <div class="setting-label">TEXT COLOUR</div>
+      <div class="swatch-row" data-target="text" id="row_text"></div>
+    </div>
+    <div class="setting-section">
+      <div class="setting-label">TIME UP DELAY</div>
+      <div class="stepper-row">
+        <div class="stepper">
+          <button data-field="up" data-part="min" data-dir="-1">−</button>
+          <span class="stepper-val mono" id="up_min" data-key="upMin">01</span>
+          <button data-field="up" data-part="min" data-dir="1">+</button>
+          <span class="stepper-suffix">min</span>
+        </div>
+        <div class="stepper">
+          <button data-field="up" data-part="sec" data-dir="-1">−</button>
+          <span class="stepper-val mono" id="up_sec" data-key="upSec">00</span>
+          <button data-field="up" data-part="sec" data-dir="1">+</button>
+          <span class="stepper-suffix">sec</span>~  
+        </div>
+      </div>
+    </div>
+    <div class="setting-section">
+      <div class="setting-label">TIME DOWN DELAY</div>
+      <div class="stepper-row">
+        <div class="stepper">
+          <button data-field="down" data-part="min" data-dir="-1">−</button>
+          <span class="stepper-val mono" id="down_min" data-key="downMin">00</span>
+          <button data-field="down" data-part="min" data-dir="1">+</button>
+          <span class="stepper-suffix">min</span>
+        </div>
+        <div class="stepper">
+          <button data-field="down" data-part="sec" data-dir="-1">−</button>
+          <span class="stepper-val mono" id="down_sec" data-key="downSec">00</span>
+          <button data-field="down" data-part="sec" data-dir="1">+</button>
+          <span class="stepper-suffix">sec</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Clear confirmation -->
+<div id="clearConfirmOverlay">
+  <div id="clearConfirmBox">
+    <div id="clearConfirmMsg">Clear all values?</div>
+    <div id="clearConfirmActions">
+      <button id="clearNo">No</button>
+      <button id="clearYes">Yes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keypad -->
+<div id="keypadOverlay">
+  <div id="sheet">
+    <div class="sheet-display mono" id="sheetDisplay">—</div>
+    <button id="signToggle" style="display:none;">±</button>
+    <div class="keys" id="keys">
+      <button class="key" data-d="1">1</button>
+      <button class="key" data-d="2">2</button>
+      <button class="key" data-d="3">3</button>
+      <button class="key" data-d="4">4</button>
+      <button class="key" data-d="5">5</button>
+      <button class="key" data-d="6">6</button>
+      <button class="key" data-d="7">7</button>
+      <button class="key" data-d="8">8</button>
+      <button class="key" data-d="9">9</button>
+      <button class="key func" id="backspaceKey">⌫</button>
+      <button class="key" data-d="0">0</button>
+      <button class="key confirm" id="confirmKey" disabled>✓</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const FIELD_TYPE = { ho:'hobbs', hf:'hobbs', tu:'time', td:'time' };
+  const CAP = { hobbs:5, time:4 };
+  const PASTELS = ['#F7D6D0','#FDE9C8','#FFF6B7','#D9F2D0','#CDEEE0','#CDE7F0','#D7D9F5','#F0D6EC'];
+  const TEXT_NORMAL = ['#E0645A','#EFA24A','#E6C23C','#5FAE68','#3FA893','#5090CC','#7B7FDE','#C864AE'];
+  const TEXT_PRESETS = TEXT_NORMAL.concat(['#808080','#000000']);
+  const PRESETS_BY_TARGET = { primary:PASTELS, secondary:PASTELS, text:TEXT_PRESETS };
+
+  let current = { ho:'', hf:'', tu:'', td:'' };
+  let entries = [];
+  let editing = null;
+  let active = null; // keypad target: { scope:'main'|'edit', key, buffer }
+
+  let settings = {
+    primary:'#CDE7F0', secondary:'#D9F2D0', text:'#000000',
+    upMin:1, upSec:0, downMin:0, downSec:0
+  };
+
+  // ---------- storage ----------
+  async function loadEntries(){
+    try{
+      const res = await window.storage.get('entries', false);
+      entries = res && res.value ? JSON.parse(res.value) : [];
+    }catch(e){ entries = []; }
+    renderDrawer();
+  }
+  async function saveEntries(){
+    try{ await window.storage.set('entries', JSON.stringify(entries), false); }catch(e){}
+  }
+  async function loadSettings(){
+    try{
+      const res = await window.storage.get('settings', false);
+      if(res && res.value) settings = Object.assign(settings, JSON.parse(res.value));
+    }catch(e){}
+    applySettings();
+    buildSwatches();
+    updateSteppers();
+  }
+  async function saveSettings(){
+    try{ await window.storage.set('settings', JSON.stringify(settings), false); }catch(e){}
+  }
+
+  function contrastColor(hex){
+    const c = hex.replace('#','');
+    const r=parseInt(c.substr(0,2),16), g=parseInt(c.substr(2,2),16), b=parseInt(c.substr(4,2),16);
+    const lum = (0.299*r+0.587*g+0.114*b)/255;
+    return lum>0.62 ? '#1B1D1C' : '#FFFFFF';
+  }
+  function applySettings(){
+    const root = document.documentElement.style;
+    root.setProperty('--primary', settings.primary);
+    root.setProperty('--primary-contrast', contrastColor(settings.primary));
+    root.setProperty('--secondary', settings.secondary);
+    root.setProperty('--text', settings.text);
+    const meta = document.getElementById('themeColorMeta');
+    if(meta) meta.setAttribute('content', settings.primary);
+  }
+
+  // ---------- formatting ----------
+  function toDigits(val, type){
+    if(!val) return '';
+    if(type==='hobbs') return String(Math.round(parseFloat(val)*10));
+    return val;
+  }
+  function formatBuffer(digits, type){
+    if(!digits) return '';
+    if(type==='hobbs'){
+      const n = parseInt(digits,10);
+      return (n/10).toFixed(1);
+    }else{
+      if(digits.length<3) return digits;
+      const hh = digits.slice(0, digits.length-2);
+      const mm = digits.slice(digits.length-2);
+      return hh+':'+mm;
+    }
+  }
+  function isValid(digits, type){
+    if(type==='hobbs') return digits.length>0 && digits.length<=CAP.hobbs;
+    if(type==='time') return digits.length===0 || digits.length===4;
+    return false;
+  }
+  function commitFormat(digits, type){
+    if(type==='hobbs') return (parseInt(digits,10)/10).toFixed(1);
+    return digits;
+  }
+  function displayValue(val, type){
+    if(!val) return '';
+    if(type==='hobbs') return val;
+    return val.slice(0,2)+':'+val.slice(2);
+  }
+  function pad2(n){ return String(n).padStart(2,'0'); }
+
+  // ---------- main grid render ----------
+  function renderMain(){
+    ['ho','hf'].forEach(k=>{
+      const el = document.getElementById('v_'+k);
+      const disp = displayValue(current[k], FIELD_TYPE[k]);
+      el.textContent = disp || '—';
+      el.classList.toggle('empty', !disp);
+    });
+    renderTimeCell('tu');
+    renderTimeCell('td');
+    const allFilled = ['ho','hf','tu','td'].every(k=>current[k]);
+    document.getElementById('doneBtn').classList.toggle('active', allFilled);
+  }
+
+  function renderTimeCell(key){
+    const el = document.getElementById('dyn_'+key);
+    const val = current[key];
+    const cell = document.querySelector('.cell[data-key="'+key+'"]');
+    if(val){
+      el.innerHTML = `<div class="time-slot"><div class="value mono">${displayValue(val,'time')}</div>
+        <button class="manual-btn" data-key="${key}">Enter Manually</button></div>`;
+      cell.classList.remove('punchable');
+    }else{
+      el.innerHTML = `<div class="time-slot"><div class="value mono empty">—</div>
+        <button class="manual-btn" data-key="${key}">Enter Manually</button></div>`;
+      cell.classList.add('punchable');
+    }
+  }
+
+  function doPunch(key){
+    const now = new Date();
+    const min = key==='tu' ? settings.upMin : settings.downMin;
+    const sec = key==='tu' ? settings.upSec : settings.downSec;
+    const target = new Date(now.getTime() + (min*60+sec)*1000);
+    const hh = pad2(target.getHours());
+    const mm = pad2(target.getMinutes());
+    current[key] = hh+mm;
+    renderMain();
+  }
+
+  function renderEdit(){
+    ['ho','hf','tu','td'].forEach(k=>{
+      const el = document.getElementById('e_v_'+k);
+      const disp = displayValue(editing[k], FIELD_TYPE[k]);
+      el.textContent = disp || '—';
+      el.classList.toggle('empty', !disp);
+    });
+  }
+
+  // ---------- keypad ----------
+  const keypadOverlay = document.getElementById('keypadOverlay');
+  const sheetDisplay = document.getElementById('sheetDisplay');
+  const confirmKey = document.getElementById('confirmKey');
+
+  function openKeypad(scope, key){
+    const type = FIELD_TYPE[key];
+    const source = scope==='main' ? current : editing;
+    active = { scope, key, buffer: toDigits(source[key], type) };
+    renderSheet();
+    keypadOverlay.classList.add('open');
+  }
+  function openDelayKeypad(settingsKey){
+    const mag = Math.abs(settings[settingsKey]);
+    active = { scope:'delaypart', key: settingsKey, buffer: mag ? String(mag) : '', sign: settings[settingsKey] < 0 ? -1 : 1 };
+    renderSheet();
+    keypadOverlay.classList.add('open');
+  }
+  function closeKeypad(){ keypadOverlay.classList.remove('open'); active = null; }
+  const signToggle = document.getElementById('signToggle');
+  function renderSheet(){
+    if(active.scope==='delaypart'){
+      signToggle.style.display = 'block';
+      const magText = active.buffer ? active.buffer : '0';
+      sheetDisplay.innerHTML = (active.sign<0 ? '−' : '') + magText;
+      confirmKey.disabled = false;
+      return;
+    }
+    signToggle.style.display = 'none';
+    const type = FIELD_TYPE[active.key];
+    const f = formatBuffer(active.buffer, type);
+    sheetDisplay.innerHTML = f ? f : '<span class="ghost">'+(type==='hobbs' ? '0.0' : '00:00')+'</span>';
+    confirmKey.disabled = !isValid(active.buffer, type);
+  }
+  signToggle.addEventListener('click', ()=>{
+    if(!active || active.scope!=='delaypart') return;
+    active.sign = -active.sign;
+    renderSheet();
+  });
+  document.getElementById('keys').addEventListener('click', (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn || !active) return;
+    if(btn.dataset.d !== undefined){
+      if(active.scope==='delaypart'){
+        if(active.buffer.length < 2) active.buffer += btn.dataset.d;
+        renderSheet();
+        return;
+      }
+      const type = FIELD_TYPE[active.key];
+      if(active.buffer.length < CAP[type]) active.buffer += btn.dataset.d;
+      renderSheet();
+    }
+  });
+  document.getElementById('backspaceKey').addEventListener('click', ()=>{
+    if(!active) return;
+    active.buffer = active.buffer.slice(0,-1);
+    renderSheet();
+  });
+  confirmKey.addEventListener('click', async ()=>{
+    if(!active) return;
+    if(active.scope==='delaypart'){
+      const mag = active.buffer ? parseInt(active.buffer,10) : 0;
+      settings[active.key] = active.sign * mag;
+      updateSteppers();
+      await saveSettings();
+      closeKeypad();
+      return;
+    }
+    const type = FIELD_TYPE[active.key];
+    if(!isValid(active.buffer, type)) return;
+    if(type==='time' && active.buffer.length===0){
+      if(active.scope==='main'){ current[active.key] = ''; renderMain(); }
+      else{ editing[active.key] = ''; renderEdit(); }
+      closeKeypad();
+      return;
+    }
+    const formatted = commitFormat(active.buffer, type);
+    if(active.scope==='main'){ current[active.key] = formatted; renderMain(); }
+    else{ editing[active.key] = formatted; renderEdit(); }
+    closeKeypad();
+  });
+  keypadOverlay.addEventListener('click', (e)=>{ if(e.target===keypadOverlay) closeKeypad(); });
+
+  document.getElementById('mainGrid').addEventListener('click', (e)=>{
+    const manualBtn = e.target.closest('.manual-btn');
+    if(manualBtn){ openKeypad('main', manualBtn.dataset.key); return; }
+    const hobbsCell = e.target.closest('.cell.tap');
+    if(hobbsCell){ openKeypad('main', hobbsCell.dataset.key); return; }
+    const timeCell = e.target.closest('.cell.punchable');
+    if(timeCell){ doPunch(timeCell.dataset.key); }
+  });
+  document.getElementById('editGrid').addEventListener('click', (e)=>{
+    const cell = e.target.closest('.cell');
+    if(!cell) return;
+    openKeypad('edit', cell.dataset.key);
+  });
+
+  // ---------- Clear ----------
+  const clearConfirmOverlay = document.getElementById('clearConfirmOverlay');
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    clearConfirmOverlay.classList.add('open');
+  });
+  document.getElementById('clearNo').addEventListener('click', ()=>{
+    clearConfirmOverlay.classList.remove('open');
+  });
+  document.getElementById('clearYes').addEventListener('click', ()=>{
+    current = { ho:'', hf:'', tu:'', td:'' };
+    renderMain();
+    clearConfirmOverlay.classList.remove('open');
+  });
+  clearConfirmOverlay.addEventListener('click', (e)=>{
+    if(e.target===clearConfirmOverlay) clearConfirmOverlay.classList.remove('open');
+  });
+
+  // ---------- Done ----------
+  document.getElementById('doneBtn').addEventListener('click', async ()=>{
+    const allFilled = ['ho','hf','tu','td'].every(k=>current[k]);
+    if(!allFilled) return;
+    const now = new Date();
+    const entry = {
+      id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+      dateISO: now.toISOString(),
+      dateLabel: now.toLocaleDateString(undefined,{month:'short', day:'numeric', year:'numeric'}),
+      ho: current.ho, hf: current.hf, tu: current.tu, td: current.td
+    };
+    entries.unshift(entry);
+    await saveEntries();
+    current = { ho:'', hf:'', tu:'', td:'' };
+    renderMain();
+    renderDrawer();
+  });
+
+  // ---------- Drawer ----------
+  const drawerOverlay = document.getElementById('drawerOverlay');
+  document.getElementById('openDrawer').addEventListener('click', ()=> drawerOverlay.classList.add('open'));
+  document.getElementById('closeDrawer').addEventListener('click', ()=> drawerOverlay.classList.remove('open'));
+  drawerOverlay.addEventListener('click', (e)=>{ if(e.target===drawerOverlay) drawerOverlay.classList.remove('open'); });
+
+  function renderDrawer(){
+    const list = document.getElementById('drawerList');
+    list.innerHTML = '';
+    if(entries.length===0){
+      list.innerHTML = '<div class="empty-msg">No entries yet</div>';
+      return;
+    }
+    entries.forEach(entry=>{
+      const row = document.createElement('div');
+      row.className = 'entry';
+      row.innerHTML = `
+        <div class="entry-top">
+          <div class="entry-date">${entry.dateLabel}</div>
+          <div class="entry-actions">
+            <button class="edit-btn" aria-label="Edit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
+            <button class="del-btn" aria-label="Delete">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="entry-grid">
+          <div class="entry-field"><div class="flabel">HOBBS ON</div><div class="fval mono">${displayValue(entry.ho,'hobbs')}</div></div>
+          <div class="entry-field"><div class="flabel">HOBBS OFF</div><div class="fval mono">${displayValue(entry.hf,'hobbs')}</div></div>
+          <div class="entry-field"><div class="flabel">TIME UP</div><div class="fval mono">${displayValue(entry.tu,'time')}</div></div>
+          <div class="entry-field"><div class="flabel">TIME DOWN</div><div class="fval mono">${displayValue(entry.td,'time')}</div></div>
+        </div>
+      `;
+      row.querySelector('.edit-btn').addEventListener('click', ()=> openEdit(entry.id));
+      row.querySelector('.del-btn').addEventListener('click', ()=> askDelete(row, entry.id));
+      list.appendChild(row);
+    });
+  }
+
+  function askDelete(row, id){
+    if(row.querySelector('.confirm-row')) return;
+    const c = document.createElement('div');
+    c.className = 'confirm-row';
+    c.innerHTML = `<span>Delete this entry?</span><button class="no">Cancel</button><button class="yes">Delete</button>`;
+    c.querySelector('.no').addEventListener('click', ()=> c.remove());
+    c.querySelector('.yes').addEventListener('click', async ()=>{
+      entries = entries.filter(e=>e.id!==id);
+      await saveEntries();
+      renderDrawer();
+    });
+    row.appendChild(c);
+  }
+
+  // ---------- Edit overlay ----------
+  const editOverlay = document.getElementById('editOverlay');
+  function openEdit(id){
+    const entry = entries.find(e=>e.id===id);
+    if(!entry) return;
+    editing = { id: entry.id, ho: entry.ho, hf: entry.hf, tu: entry.tu, td: entry.td };
+    renderEdit();
+    drawerOverlay.classList.remove('open');
+    editOverlay.classList.add('open');
+  }
+  document.getElementById('editCancel').addEventListener('click', ()=>{
+    editing = null;
+    editOverlay.classList.remove('open');
+  });
+  document.getElementById('editSave').addEventListener('click', async ()=>{
+    const idx = entries.findIndex(e=>e.id===editing.id);
+    if(idx>-1){
+      entries[idx] = { ...entries[idx], ho:editing.ho, hf:editing.hf, tu:editing.tu, td:editing.td };
+      await saveEntries();
+    }
+    editing = null;
+    editOverlay.classList.remove('open');
+    renderDrawer();
+  });
+
+  // ---------- Settings overlay ----------
+  const settingsOverlay = document.getElementById('settingsOverlay');
+  document.getElementById('openSettings').addEventListener('click', ()=>{
+    settingsOverlay.classList.add('open');
+  });
+  document.getElementById('settingsBack').addEventListener('click', ()=>{
+    settingsOverlay.classList.remove('open');
+  });
+
+  function buildSwatches(){
+    ['primary','secondary','text'].forEach(target=>{
+      const row = document.getElementById('row_'+target);
+      row.innerHTML = '';
+      PRESETS_BY_TARGET[target].forEach(color=>{
+        const b = document.createElement('button');
+        b.className = 'swatch' + (settings[target].toLowerCase()===color.toLowerCase() ? ' selected' : '');
+        b.style.background = color;
+        b.addEventListener('click', ()=> chooseColor(target, color));
+        row.appendChild(b);
+      });
+      const customWrap = document.createElement('div');
+      customWrap.className = 'swatch custom';
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = settings[target];
+      input.addEventListener('input', (e)=> chooseColor(target, e.target.value));
+      customWrap.appendChild(input);
+      row.appendChild(customWrap);
+    });
+  }
+  async function chooseColor(target, color){
+    settings[target] = color;
+    applySettings();
+    buildSwatches();
+    await saveSettings();
+  }
+
+  function formatSigned(v){ return (v<0?'−':'') + pad2(Math.abs(v)); }
+  function updateSteppers(){
+    document.getElementById('up_min').textContent = formatSigned(settings.upMin);
+    document.getElementById('up_sec').textContent = formatSigned(settings.upSec);
+    document.getElementById('down_min').textContent = formatSigned(settings.downMin);
+    document.getElementById('down_sec').textContent = formatSigned(settings.downSec);
+  }
+  document.querySelectorAll('.stepper-val').forEach(span=>{
+    span.addEventListener('click', ()=> openDelayKeypad(span.dataset.key));
+  });
+  document.querySelectorAll('.stepper button').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const field = btn.dataset.field; // up | down
+      const part = btn.dataset.part;   // min | sec
+      const dir = parseInt(btn.dataset.dir,10);
+      const key = field + (part==='min' ? 'Min' : 'Sec');
+      let v = settings[key] + dir;
+      if(v<-59) v=-59;
+      if(v>59) v=59;
+      settings[key] = v;
+      updateSteppers();
+      await saveSettings();
+    });
+  });
+
+  // ---------- init ----------
+  renderMain();
+  loadSettings();
+  loadEntries();
+})();
+</script>
+</body>
+</html>
